@@ -1,4 +1,5 @@
 from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo.errors import ConfigurationError
 from config import Config
 from datetime import datetime
 from utils.logger import setup_logger
@@ -8,7 +9,12 @@ logger = setup_logger(__name__)
 class Database:
     def __init__(self):
         self.client = AsyncIOMotorClient(Config.REDIRECT_DB_URI)
-        self.db = self.client.get_default_database()
+        try:
+            self.db = self.client.get_default_database()
+        except ConfigurationError:
+            logger.warning("No default database name provided in URI. Using 'xtv_redirect'.")
+            self.db = self.client.get_database("xtv_redirect")
+
         self.redirects = self.db.redirect_links
         logger.info("Connected to MongoDB")
 
