@@ -1,0 +1,8 @@
+python-telegram-bot
+pymongo
+python-dotenv
+colorlog
+motor
+aiodns
+uvloop
+httpx
