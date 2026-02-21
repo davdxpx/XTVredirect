@@ -5,7 +5,7 @@ from config import Config
 from utils.logger import setup_logger
 from handlers.admin import admin_dashboard, admin_callback_handler, regenerate_conversation_handler
 from handlers.start import start_handler, loading_callback
-from handlers.channel_setup import setup_conversation_handler
+from handlers.channel_setup import setup_conversation_handler, channel_event_handler
 
 # Set up logging
 logger = setup_logger(__name__)
@@ -30,6 +30,9 @@ def main():
     # 1. Conversation Handlers (Stateful)
     # Channel Setup (High Priority)
     application.add_handler(setup_conversation_handler)
+
+    # Channel Event Handler (Triggers the setup message to Admin)
+    application.add_handler(channel_event_handler)
 
     # Admin Regenerate Conversation (Specific Pattern)
     application.add_handler(regenerate_conversation_handler)
