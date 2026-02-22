@@ -1,6 +1,7 @@
 import asyncio
 import random
 import html
+from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from config import Config
@@ -92,12 +93,22 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     # Dynamic Loading Animation
-    loading_messages = [
+    loading_messages_pool = [
         "Creating Individual Invite Link... ⚙️",
         "Verifying User Access... 🔐",
-        "Preparing Secure Channel... 📡"
+        "Preparing Secure Channel... 📡",
+        "Establishing Secure Connection... 📶",
+        "Encrypting Data Stream... 🔑",
+        "Allocating Bandwidth... ⚡️",
+        "Syncing with Server... 🔄",
+        "Authenticating Request... 🆔",
+        "Optimizing Video Quality... 📺",
+        "Checking Subscription Status... 📋",
+        "Generating Access Token... 🎟️",
+        "Finalizing Setup... ✅"
     ]
-    random.shuffle(loading_messages)
+    # Select 3 random messages to show
+    loading_messages = random.sample(loading_messages_pool, 3)
 
     for msg in loading_messages:
         try:
@@ -123,6 +134,9 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     channel_id = redirect_entry.get('private_channel_id')
     user_id = update.effective_user.id
 
+    # Text to append if a dynamic link is generated
+    expiration_notice = ""
+
     if channel_id:
         try:
             # Check if user is already a member
@@ -131,29 +145,34 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 # User is already in, use static link
                 pass
             else:
-                # User is not in, create one-time invite link
+                # User is not in, create one-time invite link with 10 min expiration
+                expire_time = datetime.now() + timedelta(minutes=10)
                 invite = await context.bot.create_chat_invite_link(
                     chat_id=channel_id,
                     name=f"User {user_id}",
-                    member_limit=1
+                    member_limit=1,
+                    expire_date=expire_time
                 )
                 final_invite_link = invite.invite_link
+                expiration_notice = "\n⚠️ <b>Link expires in 10 minutes!</b>"
         except Exception as e:
             logger.warning(f"Failed to generate dynamic link or check member for {channel_id}: {e}")
 
     # Change Button to "Join Channel" and revert text
     join_keyboard = [[InlineKeyboardButton("🚀 Join Channel", url=final_invite_link)]]
 
+    final_caption = initial_caption + expiration_notice
+
     try:
         if details['poster_url']:
             await message.edit_caption(
-                caption=initial_caption,
+                caption=final_caption,
                 parse_mode='HTML',
                 reply_markup=InlineKeyboardMarkup(join_keyboard)
             )
         else:
             await message.edit_text(
-                text=initial_caption,
+                text=final_caption,
                 parse_mode='HTML',
                 reply_markup=InlineKeyboardMarkup(join_keyboard)
             )
