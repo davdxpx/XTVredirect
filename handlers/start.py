@@ -64,13 +64,14 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     genres = html.escape(str(details.get('genres', 'Unknown')))
     overview = html.escape(str(details.get('overview', 'No description available.'))[:300])
 
-    caption = (
+    base_caption = (
         f"<b>{title}</b> • {details.get('year', 'N/A')}\n"
         f"⭐️ <b>{details.get('rating', 'N/A')}/10</b>  🎭 {genres}\n\n"
         f"💬 <b>Description:</b>\n"
         f"{overview}...\n\n"
-        f"Enjoy watching! 🍿"
     )
+
+    initial_caption = base_caption + "Enjoy watching! 🍿"
 
     # Initial Button: Loading...
     loading_keyboard = [[InlineKeyboardButton("⏳ Loading...", callback_data="loading_wait")]]
@@ -79,27 +80,83 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if details['poster_url']:
         message = await update.message.reply_photo(
             photo=details['poster_url'],
-            caption=caption,
+            caption=initial_caption,
             parse_mode='HTML',
             reply_markup=InlineKeyboardMarkup(loading_keyboard)
         )
     else:
         message = await update.message.reply_text(
-            text=caption,
+            text=initial_caption,
             parse_mode='HTML',
             reply_markup=InlineKeyboardMarkup(loading_keyboard)
         )
 
-    # Wait 3-8 seconds
-    delay = random.uniform(3, 8)
-    await asyncio.sleep(delay)
+    # Dynamic Loading Animation
+    loading_messages = [
+        "Creating Individual Invite Link... ⚙️",
+        "Verifying User Access... 🔐",
+        "Preparing Secure Channel... 📡"
+    ]
+    random.shuffle(loading_messages)
 
-    # Change Button to "Join Channel"
-    invite_link = redirect_entry.get('invite_link')
-    join_keyboard = [[InlineKeyboardButton("🚀 Join Channel", url=invite_link)]]
+    for msg in loading_messages:
+        try:
+            new_text = base_caption + f"{msg}"
+            if details['poster_url']:
+                await message.edit_caption(
+                    caption=new_text,
+                    parse_mode='HTML',
+                    reply_markup=InlineKeyboardMarkup(loading_keyboard)
+                )
+            else:
+                await message.edit_text(
+                    text=new_text,
+                    parse_mode='HTML',
+                    reply_markup=InlineKeyboardMarkup(loading_keyboard)
+                )
+        except Exception:
+            pass  # Ignore errors (e.g., message not modified)
+        await asyncio.sleep(1.5)
+
+    # Determine Invite Link
+    final_invite_link = redirect_entry.get('invite_link')
+    channel_id = redirect_entry.get('private_channel_id')
+    user_id = update.effective_user.id
+
+    if channel_id:
+        try:
+            # Check if user is already a member
+            chat_member = await context.bot.get_chat_member(chat_id=channel_id, user_id=user_id)
+            if chat_member.status in ['member', 'creator', 'administrator']:
+                # User is already in, use static link
+                pass
+            else:
+                # User is not in, create one-time invite link
+                invite = await context.bot.create_chat_invite_link(
+                    chat_id=channel_id,
+                    name=f"User {user_id}",
+                    member_limit=1
+                )
+                final_invite_link = invite.invite_link
+        except Exception as e:
+            logger.warning(f"Failed to generate dynamic link or check member for {channel_id}: {e}")
+
+    # Change Button to "Join Channel" and revert text
+    join_keyboard = [[InlineKeyboardButton("🚀 Join Channel", url=final_invite_link)]]
 
     try:
-        await message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(join_keyboard))
+        if details['poster_url']:
+            await message.edit_caption(
+                caption=initial_caption,
+                parse_mode='HTML',
+                reply_markup=InlineKeyboardMarkup(join_keyboard)
+            )
+        else:
+            await message.edit_text(
+                text=initial_caption,
+                parse_mode='HTML',
+                reply_markup=InlineKeyboardMarkup(join_keyboard)
+            )
     except Exception as e:
         logger.warning(f"Failed to edit message for code {code}: {e}")
 
