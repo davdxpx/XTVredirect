@@ -39,6 +39,13 @@ class Database:
         """Retrieves a redirect entry by code."""
         return await self.redirects.find_one({"code": code})
 
+    async def update_redirect(self, code: str, update_data: dict):
+        """Updates specific fields of a redirect entry."""
+        await self.redirects.update_one(
+            {"code": code},
+            {"$set": update_data}
+        )
+
     async def update_stats(self, code: str):
         """Updates used_count and last_used for a redirect."""
         await self.redirects.update_one(
