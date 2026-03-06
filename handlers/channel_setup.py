@@ -193,6 +193,9 @@ async def receive_series_selection(update: Update, context: ContextTypes.DEFAULT
     # Generate Redirect Code
     code = generate_redirect_code()
 
+    # Fetch full TMDB details and cache them
+    details = await tmdb.get_details(selected['media_type'], selected['id'])
+
     # Save to DB
     redirect_data = {
         "code": code,
@@ -200,7 +203,8 @@ async def receive_series_selection(update: Update, context: ContextTypes.DEFAULT
         "tmdb_id": selected['id'],
         "media_type": selected['media_type'],
         "private_channel_id": channel_id,
-        "invite_link": invite_link
+        "invite_link": invite_link,
+        "tmdb_details": details  # Cache the details
     }
 
     success = await db.create_redirect(redirect_data)

@@ -43,14 +43,48 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ <b>Invalid or expired link.</b>", parse_mode='HTML')
         return
 
-    # Fetch TMDb details
-    tmdb_id = redirect_entry.get('tmdb_id')
-    media_type = redirect_entry.get('media_type', 'tv') # Default to tv if missing
+    channel_id = redirect_entry.get('private_channel_id')
+    final_invite_link = redirect_entry.get('invite_link')
+    user_id = update.effective_user.id
 
-    details = await tmdb.get_details(media_type, tmdb_id)
+    # Check if user is already a member before fetching metadata
+    is_member = False
+    if channel_id:
+        try:
+            chat_member = await context.bot.get_chat_member(chat_id=channel_id, user_id=user_id)
+            if chat_member.status in ['member', 'creator', 'administrator']:
+                is_member = True
+        except Exception as e:
+            logger.warning(f"Failed to check member status for {user_id} in {channel_id}: {e}")
+
+    if is_member:
+        # Fast-track for existing members
+        join_keyboard = [[InlineKeyboardButton("🚀 Zum Kanal", url=final_invite_link)]]
+        await update.message.reply_text(
+            "✅ <b>Du bist bereits Mitglied!</b>\n\nKlicke unten, um direkt zum Kanal zu gelangen.",
+            parse_mode='HTML',
+            reply_markup=InlineKeyboardMarkup(join_keyboard)
+        )
+        # Update stats in background
+        await db.update_stats(code)
+        return
+
+    # Fetch TMDb details - Try to get cached details first
+    details = redirect_entry.get('tmdb_details')
 
     if not details:
-        # Fallback if TMDb fails
+        # Fetch from TMDB if not cached
+        tmdb_id = redirect_entry.get('tmdb_id')
+        media_type = redirect_entry.get('media_type', 'tv') # Default to tv if missing
+
+        details = await tmdb.get_details(media_type, tmdb_id)
+
+        if details:
+            # Cache the details for future use
+            await db.update_redirect(code, {"tmdb_details": details})
+
+    if not details:
+        # Fallback if TMDb fails and not cached
         details = {
             "title": redirect_entry.get('series_name'),
             "year": "N/A",
@@ -130,33 +164,22 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await asyncio.sleep(1.5)
 
     # Determine Invite Link
-    final_invite_link = redirect_entry.get('invite_link')
-    channel_id = redirect_entry.get('private_channel_id')
-    user_id = update.effective_user.id
-
-    # Text to append if a dynamic link is generated
+    # For non-members, create one-time invite link with 10 min expiration
     expiration_notice = ""
 
     if channel_id:
         try:
-            # Check if user is already a member
-            chat_member = await context.bot.get_chat_member(chat_id=channel_id, user_id=user_id)
-            if chat_member.status in ['member', 'creator', 'administrator']:
-                # User is already in, use static link
-                pass
-            else:
-                # User is not in, create one-time invite link with 10 min expiration
-                expire_time = datetime.now() + timedelta(minutes=10)
-                invite = await context.bot.create_chat_invite_link(
-                    chat_id=channel_id,
-                    name=f"User {user_id}",
-                    member_limit=1,
-                    expire_date=expire_time
-                )
-                final_invite_link = invite.invite_link
-                expiration_notice = "\n⚠️ <b>Link expires in 10 minutes!</b>"
+            expire_time = datetime.now() + timedelta(minutes=10)
+            invite = await context.bot.create_chat_invite_link(
+                chat_id=channel_id,
+                name=f"User {user_id}",
+                member_limit=1,
+                expire_date=expire_time
+            )
+            final_invite_link = invite.invite_link
+            expiration_notice = "\n⚠️ <b>Link expires in 10 minutes!</b>"
         except Exception as e:
-            logger.warning(f"Failed to generate dynamic link or check member for {channel_id}: {e}")
+            logger.warning(f"Failed to generate dynamic link for {channel_id}: {e}")
 
     # Change Button to "Join Channel" and revert text
     join_keyboard = [[InlineKeyboardButton("🚀 Join Channel", url=final_invite_link)]]
