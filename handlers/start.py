@@ -59,9 +59,9 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if is_member:
         # Fast-track for existing members
-        join_keyboard = [[InlineKeyboardButton("🚀 Zum Kanal", url=final_invite_link)]]
+        join_keyboard = [[InlineKeyboardButton("🚀 Join Channel", url=final_invite_link)]]
         await update.message.reply_text(
-            "✅ <b>Du bist bereits Mitglied!</b>\n\nKlicke unten, um direkt zum Kanal zu gelangen.",
+            "✅ <b>You are already a member!</b>\n\nClick below to go directly to the channel.",
             parse_mode='HTML',
             reply_markup=InlineKeyboardMarkup(join_keyboard)
         )
