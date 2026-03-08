@@ -154,6 +154,18 @@ async def change_channel_decision(update: Update, context: ContextTypes.DEFAULT_
         if entry:
             old_channel_id = entry.get('private_channel_id')
             if old_channel_id and old_channel_id != channel_id:
+                # Try to send a forwarding message to the old channel
+                try:
+                    bot_username = context.bot.username
+                    deep_link = f"https://t.me/{bot_username}?start={code}"
+                    await context.bot.send_message(
+                        chat_id=old_channel_id,
+                        text=f"⚠️ <b>Channel Moved!</b>\n\nThis channel is moving. You can join the new channel by clicking the link below:\n\n🔗 {deep_link}",
+                        parse_mode='HTML'
+                    )
+                except Exception as e:
+                    logger.warning(f"Could not send forwarding message to old channel {old_channel_id}: {e}")
+
                 # Optionally try to leave old channel silently
                 try:
                     await context.bot.leave_chat(old_channel_id)
