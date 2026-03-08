@@ -316,6 +316,19 @@ async def receive_series_selection(update: Update, context: ContextTypes.DEFAULT
         await query.edit_message_text("⚠️ Session expired. Please restart setup.")
         return ConversationHandler.END
 
+    # Check if this TMDB ID already exists
+    existing_redirect = await db.redirects.find_one({"tmdb_id": selected['id']})
+    if existing_redirect:
+        existing_code = existing_redirect.get('code')
+        await query.edit_message_text(
+            f"⚠️ <b>Series Already Registered</b>\n\n"
+            f"The series <b>{selected['title']}</b> already has an active redirect link (<code>{existing_code}</code>).\n\n"
+            f"<i>You can only have one channel per series.</i> If you need to change the channel for this series, please use the <b>🛠 Manage Redirect Links</b> menu in the Admin Dashboard.",
+            parse_mode='HTML'
+        )
+        context.user_data.clear()
+        return ConversationHandler.END
+
     # Generate Redirect Code
     code = generate_redirect_code()
 
