@@ -108,7 +108,7 @@ async def render_manage_links_page(query, page_num: int):
     for link in links:
         series = link.get('series_name', 'Unknown')
         code = link.get('code', 'N/A')
-        keyboard.append([InlineKeyboardButton(f"{series} ({code})", callback_data=f"admin_manage_link_{code}")])
+        keyboard.append([InlineKeyboardButton(f"{series}", callback_data=f"admin_manage_link_{code}")])
 
     # Pagination row
     nav_row = []

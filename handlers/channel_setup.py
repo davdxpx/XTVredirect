@@ -37,6 +37,12 @@ async def setup_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     chat = result.chat
+
+    # Check if channel is already registered (to prevent duplicate prompts on permission updates)
+    existing = await db.redirects.find_one({"private_channel_id": chat.id})
+    if existing:
+        return
+
     inviter = result.from_user
     logger.info(f"Bot added to channel: {chat.title} ({chat.id}) by user {inviter.id}")
 
