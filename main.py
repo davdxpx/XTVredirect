@@ -3,7 +3,7 @@ import asyncio
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ChatMemberHandler, ContextTypes
 from config import Config
 from utils.logger import setup_logger
-from handlers.admin import admin_dashboard, admin_callback_handler, regenerate_conversation_handler
+from handlers.admin import admin_dashboard, admin_callback_handler
 from handlers.start import start_handler, loading_callback
 from handlers.channel_setup import setup_conversation_handler, channel_event_handler
 
@@ -34,8 +34,8 @@ def main():
     # Channel Event Handler (Triggers the setup message to Admin)
     application.add_handler(channel_event_handler)
 
-    # Admin Regenerate Conversation (Specific Pattern)
-    application.add_handler(regenerate_conversation_handler)
+    from handlers.channel_setup import change_channel_decision
+    application.add_handler(CallbackQueryHandler(change_channel_decision, pattern="^change_"))
 
     # 2. Command Handlers
     application.add_handler(CommandHandler("start", start_handler))
