@@ -42,20 +42,39 @@ async def setup_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     admin_id = Config.CEO_ID
 
-    text = (
-        f"🚨 <b>New Channel Setup Request</b>\n\n"
-        f"📺 <b>Channel:</b> {chat.title}\n"
-        f"🆔 <b>ID:</b> <code>{chat.id}</code>\n"
-        f"👤 <b>Added by:</b> {inviter.first_name} (<code>{inviter.id}</code>)\n\n"
-        "Do you want to configure a redirect link for this channel?"
-    )
+    # Check if admin is currently in "Change Channel" flow
+    if 'waiting_change_channel_code' in context.user_data:
+        code = context.user_data['waiting_change_channel_code']
 
-    keyboard = [
-        [
-            InlineKeyboardButton("✅ Accept", callback_data=f"setup_accept|{chat.id}"),
-            InlineKeyboardButton("❌ Decline", callback_data=f"setup_decline|{chat.id}")
+        text = (
+            f"🔄 <b>Change Channel Detected</b>\n\n"
+            f"I have been added to the channel: <b>{chat.title}</b> (<code>{chat.id}</code>)\n\n"
+            f"Do you want to use this channel for the redirect code: <code>{code}</code>?"
+        )
+
+        keyboard = [
+            [
+                InlineKeyboardButton("✅ Accept", callback_data=f"change_accept|{chat.id}"),
+                InlineKeyboardButton("❌ Reject", callback_data=f"change_reject|{chat.id}")
+            ],
+            [InlineKeyboardButton("❌ Cancel Entire Change", callback_data="admin_cancel_change")]
         ]
-    ]
+
+    else:
+        text = (
+            f"🚨 <b>New Channel Setup Request</b>\n\n"
+            f"📺 <b>Channel:</b> {chat.title}\n"
+            f"🆔 <b>ID:</b> <code>{chat.id}</code>\n"
+            f"👤 <b>Added by:</b> {inviter.first_name} (<code>{inviter.id}</code>)\n\n"
+            "Do you want to configure a redirect link for this channel?"
+        )
+
+        keyboard = [
+            [
+                InlineKeyboardButton("✅ Accept", callback_data=f"setup_accept|{chat.id}"),
+                InlineKeyboardButton("❌ Decline", callback_data=f"setup_decline|{chat.id}")
+            ]
+        ]
 
     try:
         await context.bot.send_message(
@@ -66,6 +85,95 @@ async def setup_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     except Exception as e:
         logger.error(f"Failed to message admin {admin_id}: {e}")
+
+async def change_channel_decision(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Handles Accept/Reject for the "Change Channel" flow when bot is added to a new channel.
+    """
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+
+    if not data.startswith("change_"):
+        return
+
+    action, channel_id_str = data.split("|")
+    channel_id = int(channel_id_str)
+
+    if action == "change_reject":
+        await query.edit_message_text(
+            f"❌ Rejected channel ID {channel_id} for change channel flow.\n\n"
+            "<i>Still waiting for you to add me to the correct channel...</i>",
+            parse_mode='HTML',
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel Entire Change", callback_data="admin_cancel_change")]])
+        )
+        try:
+            await context.bot.leave_chat(channel_id)
+        except:
+            pass
+        return
+
+    if action == "change_accept":
+        # Check if still in waiting state
+        if 'waiting_change_channel_code' not in context.user_data:
+            await query.edit_message_text("⚠️ Change channel session expired.")
+            return
+
+        code = context.user_data.pop('waiting_change_channel_code')
+
+        try:
+            chat = await context.bot.get_chat(channel_id)
+        except Exception as e:
+            await query.edit_message_text(f"⚠️ Error: Could not access channel {channel_id}. Am I still admin?\n{e}")
+            return
+
+        # Generate new invite link
+        try:
+            invite_link_obj = await context.bot.create_chat_invite_link(
+                chat_id=channel_id,
+                name="XTV Redirect Link"
+            )
+            invite_link = invite_link_obj.invite_link
+        except Exception as e:
+            logger.error(f"Failed to create invite link for {chat.id}: {e}")
+            await query.edit_message_text(
+                f"⚠️ Error changing channel: Could not create invite link.\n"
+                f"Ensure I have 'Invite Users' permission and try again.",
+                parse_mode='HTML'
+            )
+            return
+
+        # Fetch old redirect entry
+        entry = await db.get_redirect(code)
+        if entry:
+            old_channel_id = entry.get('private_channel_id')
+            if old_channel_id and old_channel_id != channel_id:
+                # Optionally try to leave old channel silently
+                try:
+                    await context.bot.leave_chat(old_channel_id)
+                except:
+                    pass
+
+        # Update Database
+        await db.redirects.update_one(
+            {"code": code},
+            {"$set": {"private_channel_id": channel_id, "invite_link": invite_link}}
+        )
+
+        series_name = entry.get('series_name', 'Unknown') if entry else 'Unknown'
+
+        text = (
+            f"✅ <b>Channel Successfully Changed!</b>\n\n"
+            f"📺 <b>Series:</b> {series_name}\n"
+            f"🔗 <b>New Invite Link:</b> {invite_link}\n\n"
+            f"The redirect link (<code>{code}</code>) now points to this new channel."
+        )
+
+        # We can reuse the admin manage link back button
+        keyboard = [[InlineKeyboardButton("🔙 Back to Link Details", callback_data=f"admin_manage_link_{code}")]]
+
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+
 
 async def setup_decision(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
