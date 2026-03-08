@@ -298,6 +298,67 @@ async def receive_series_selection(update: Update, context: ContextTypes.DEFAULT
         context.user_data.clear()
         return ConversationHandler.END
 
+    if data.startswith("swap_channel|"):
+        code = data.split("|")[1]
+        channel_id = context.user_data.get('setup_channel_id')
+        series_title = context.user_data.get('swap_series_title', 'Unknown')
+
+        if not channel_id:
+            await query.edit_message_text("⚠️ Session expired. Please restart setup.")
+            return ConversationHandler.END
+
+        # Generate new invite link
+        try:
+            invite_link_obj = await context.bot.create_chat_invite_link(
+                chat_id=channel_id,
+                name="XTV Redirect Link"
+            )
+            invite_link = invite_link_obj.invite_link
+        except Exception as e:
+            logger.error(f"Failed to create invite link for {channel_id}: {e}")
+            await query.edit_message_text("⚠️ Error changing channel: Could not create invite link.", parse_mode='HTML')
+            return ConversationHandler.END
+
+        # Fetch old redirect entry
+        entry = await db.get_redirect(code)
+        if entry:
+            old_channel_id = entry.get('private_channel_id')
+            if old_channel_id and old_channel_id != channel_id:
+                # Try to send a forwarding message to the old channel
+                try:
+                    bot_username = context.bot.username
+                    deep_link = f"https://t.me/{bot_username}?start={code}"
+                    await context.bot.send_message(
+                        chat_id=old_channel_id,
+                        text=f"⚠️ <b>Channel Moved!</b>\n\nThis channel is moving. You can join the new channel by clicking the link below:\n\n🔗 {deep_link}",
+                        parse_mode='HTML'
+                    )
+                except Exception as e:
+                    logger.warning(f"Could not send forwarding message to old channel {old_channel_id}: {e}")
+
+                # Optionally try to leave old channel silently
+                try:
+                    await context.bot.leave_chat(old_channel_id)
+                except:
+                    pass
+
+        # Update Database
+        await db.redirects.update_one(
+            {"code": code},
+            {"$set": {"private_channel_id": channel_id, "invite_link": invite_link}}
+        )
+
+        text = (
+            f"✅ <b>Channel Successfully Changed!</b>\n\n"
+            f"📺 <b>Series:</b> {series_title}\n"
+            f"🔗 <b>New Invite Link:</b> {invite_link}\n\n"
+            f"The redirect link (<code>{code}</code>) now points to this new channel."
+        )
+
+        await query.edit_message_text(text, parse_mode='HTML')
+        context.user_data.clear()
+        return ConversationHandler.END
+
     if not data.startswith("select_idx|"):
         return SERIES_SELECTION
 
@@ -320,14 +381,22 @@ async def receive_series_selection(update: Update, context: ContextTypes.DEFAULT
     existing_redirect = await db.redirects.find_one({"tmdb_id": selected['id']})
     if existing_redirect:
         existing_code = existing_redirect.get('code')
-        await query.edit_message_text(
+        text = (
             f"⚠️ <b>Series Already Registered</b>\n\n"
             f"The series <b>{selected['title']}</b> already has an active redirect link (<code>{existing_code}</code>).\n\n"
-            f"<i>You can only have one channel per series.</i> If you need to change the channel for this series, please use the <b>🛠 Manage Redirect Links</b> menu in the Admin Dashboard.",
-            parse_mode='HTML'
+            f"<i>You can only have one channel per series.</i>\n"
+            f"Do you want to change the channel for this series to the current one?"
         )
-        context.user_data.clear()
-        return ConversationHandler.END
+        keyboard = [
+            [InlineKeyboardButton("🔄 Yes, Change Channel", callback_data=f"swap_channel|{existing_code}")],
+            [InlineKeyboardButton("❌ Cancel Setup", callback_data="cancel_setup")]
+        ]
+
+        # Store selected title in user_data so the swap action can use it for feedback
+        context.user_data['swap_series_title'] = selected['title']
+
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+        return SERIES_SELECTION
 
     # Generate Redirect Code
     code = generate_redirect_code()
